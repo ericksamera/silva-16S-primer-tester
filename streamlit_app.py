@@ -176,7 +176,8 @@ suggest_and_info()
 # ---- Session state hydration from query param ----
 selected_ids = params.get("selected_id", [])
 if isinstance(selected_ids, str):
-    selected_ids = [selected_ids]
+    # This will be a comma-separated string if there are multiple IDs
+    selected_ids = [id.strip() for id in selected_ids.split(",") if id.strip()]
 
 if "selected_rows" not in st.session_state or st.session_state.selected_rows is None:
     st.session_state.selected_rows = []
@@ -194,11 +195,12 @@ if selected_ids:
 if not results.empty:
     edited, results_to_edit = results_table_ui(results, st.session_state.selected_rows)
     st.session_state.selected_rows = update_selected_rows(edited, results_to_edit, st.session_state.selected_rows)
-    st.query_params["selected_id"] = [row["row_id"] for row in st.session_state.selected_rows]
-    # ---- Show a shareable URL manually ----
+    # Store all selected ids as a comma-separated string!
     selected_ids = [row["row_id"] for row in st.session_state.selected_rows]
+    st.query_params["selected_id"] = ",".join(selected_ids)
+    # Shareable URL code block:
     if selected_ids:
-        querystring = "&".join(f"selected_id={qid}" for qid in selected_ids)
+        querystring = f"selected_id={','.join(selected_ids)}"
         st.code(f"?{querystring}")
 
 selected_table_ui(st.session_state.selected_rows)
