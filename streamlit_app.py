@@ -73,7 +73,6 @@ def update_selected_rows(edited, results_to_edit, selected_rows):
     return selected_rows
 
 def parse_primer_filename(filename):
-    # Remove extension if present
     base = os.path.splitext(os.path.basename(filename))[0]
     parts = base.split("_")
     if len(parts) >= 3:
@@ -156,7 +155,6 @@ if primer_info:
         **Reverse:** `{primer_info['reverse']}`"""
     )
 
-
 params = st.query_params.to_dict()
 filters, query = filter_ui(params)
 for i, col in enumerate(TAXONOMY_COLS):
@@ -175,8 +173,23 @@ def suggest_and_info():
             st.info("No close matches found.")
 suggest_and_info()
 
-if "selected_rows" not in st.session_state:
+# ---- Session state hydration from query param ----
+selected_ids = params.get("selected_id", [])
+if isinstance(selected_ids, str):
+    selected_ids = [selected_ids]
+
+if "selected_rows" not in st.session_state or st.session_state.selected_rows is None:
     st.session_state.selected_rows = []
+
+if selected_ids:
+    ids_in_state = {row["row_id"] for row in st.session_state.selected_rows}
+    for row_id in selected_ids:
+        if row_id not in ids_in_state:
+            matches = df[df["row_id"] == row_id]
+            if not matches.empty:
+                st.session_state.selected_rows.append(
+                    matches[DISPLAY_COLS + ["row_id"]].iloc[0].to_dict()
+                )
 
 if not results.empty:
     edited, results_to_edit = results_table_ui(results, st.session_state.selected_rows)
