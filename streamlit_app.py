@@ -8,94 +8,196 @@ import os
 st.set_page_config(layout="wide")
 st.title("Taxonomy Search Suite")
 
-TAX_COLS = ["Domain","Phylum","Class","Order","Family","Genus"]
-DISPLAY_COLS = TAX_COLS + ["Coverage","Specificity"]
+TAXONOMY_COLS = ["Domain", "Phylum", "Class", "Order", "Family", "Genus"]
+DISPLAY_COLS = TAXONOMY_COLS + ["Coverage", "Specificity"]
 
-def load_df(path):
-    df = pd.read_csv(path, sep=";", quotechar='"').drop(columns=["job_name"], errors="ignore")
-    parts = df["taxonomy"].str.strip(";").str.split(";").apply(lambda x: [i.strip() for i in x[1:7]] + [""]*6) 
-    tax = pd.DataFrame(parts.tolist(), columns=TAX_COLS)
-    df = pd.concat([df.drop(columns=["taxonomy"]), tax], axis=1)
-    df = df[df["Domain"].str.lower() != "eukaryota"]
-    df.rename(columns={"coverage":"Coverage","specificity":"Specificity"}, inplace=True)
-    df["row_id"] = df.apply(lambda r: sha256("|".join(str(r[c]) for c in TAX_COLS).encode()).hexdigest()[:8], axis=1)
+def load_taxonomy_df(path_or_df):
+    df = pd.read_csv(path_or_df, sep=";", quotechar='"') if isinstance(path_or_df, str) else path_or_df.copy()
+    df = df.drop(columns=["job_name"], errors="ignore")
+    def split_to_six_levels(x):
+        x = [i.strip() for i in x[1:]]
+        x = x[:6] + [""] * (6 - len(x))
+        return x
+    taxonomy_split = df["taxonomy"].str.strip(";").str.split(";").apply(split_to_six_levels)
+    taxonomy_df = pd.DataFrame(taxonomy_split.tolist(), columns=TAXONOMY_COLS)
+    df = pd.concat([df.drop(columns=["taxonomy"]), taxonomy_df], axis=1)
+    df = df[df["Domain"].str.lower().str.strip() != "eukaryota"]
+    df.rename(columns={"coverage": "Coverage", "specificity": "Specificity"}, inplace=True)
+    df["row_id"] = df.apply(lambda row: sha256("|".join([str(row[col]) for col in TAXONOMY_COLS]).encode()).hexdigest()[:8], axis=1)
     return df
 
-def filter_df(df, filters, global_q):
-    for col,f in zip(TAX_COLS, filters):
-        if f: df = df[df[col].str.contains(f, case=False, na=False)]
-    if global_q:
-        mask = df[TAX_COLS].apply(lambda c: c.str.contains(global_q, case=False, na=False))
-        df = df[mask.any(axis=1)]
-    return df
+def filter_df(df, filters, global_query):
+    results = df.copy()
+    for col_name, val in zip(TAXONOMY_COLS, filters):
+        if val:
+            results = results[results[col_name].str.contains(val, case=False, na=False)]
+    if global_query:
+        mask = results[TAXONOMY_COLS].apply(lambda c: c.str.contains(global_query, case=False, na=False)).any(axis=1)
+        results = results[mask]
+    return results
 
-def suggest(user, df, filters):
-    out=[]
-    seen=set()
-    for col in TAX_COLS:
-        for v in get_close_matches(user, df[col].dropna().unique(), n=3, cutoff=0.6):
-            if v not in seen:
-                out.append(f"[{v} ({col})](/?{col.lower()}={v})")
-                seen.add(v)
-            if len(out)>=3: break
-    return out
+def get_suggestions(user_input, df, filters):
+    suggestions = []
+    for col in TAXONOMY_COLS:
+        names = df[col].dropna().astype(str).tolist()
+        close = get_close_matches(user_input, names, n=3, cutoff=0.6)
+        for name in close:
+            suggestions.append((name, col))
+    seen = set()
+    output = []
+    for name, level in suggestions:
+        if name not in seen:
+            seen.add(name)
+            params_copy = {TAXONOMY_COLS[i].lower(): filters[i] for i in range(len(TAXONOMY_COLS))}
+            params_copy["global"] = ""
+            params_copy[level.lower()] = name
+            qs = "&".join(f"{quote(k)}={quote(v)}" for k, v in params_copy.items() if v)
+            link = f"[{name} ({level})](/?{qs})"
+            output.append(link)
+        if len(output) >= 3:
+            break
+    return output
 
-def update_sel(edited, rows, sel_rows):
-    checked = set(rows.loc[edited["Select"],"row_id"])
-    visible = set(rows["row_id"])
-    in_state = {r["row_id"] for r in sel_rows}
-    for i in checked-in_state:
-        sel_rows.append(rows[rows["row_id"] == i][DISPLAY_COLS+["row_id"]].iloc[0].to_dict())
-    sel_rows[:] = [r for r in sel_rows if not (r["row_id"] in visible-checked)]
-    return sel_rows
+def update_selected_rows(edited, results_to_edit, selected_rows):
+    checked_ids = set(results_to_edit.loc[edited["Select"], "row_id"])
+    visible_ids = set(results_to_edit["row_id"])
+    selected_hashes = {row["row_id"] for row in selected_rows}
+    for idx in checked_ids - selected_hashes:
+        if not any(row["row_id"] == idx for row in selected_rows):
+            row_to_add = results_to_edit[results_to_edit["row_id"] == idx][DISPLAY_COLS + ["row_id"]].iloc[0].to_dict()
+            selected_rows.append(row_to_add)
+    selected_rows[:] = [row for row in selected_rows if not (row["row_id"] in (visible_ids - checked_ids))]
+    return selected_rows
 
-# App start
-df_path = st.selectbox("Choose CSV", os.listdir("."), index=0)
-df = load_df(df_path)
+def parse_primer_filename(filename):
+    base = os.path.splitext(os.path.basename(filename))[0]
+    parts = base.split("_")
+    if len(parts) >= 3:
+        return {
+            "set": parts[0],
+            "forward": parts[1],
+            "reverse": parts[2]
+        }
+    else:
+        return {"set": base, "forward": "", "reverse": ""}
+
+def data_file_selector(default_file):
+    demo_files = [default_file] + [f for f in os.listdir(".") if f.endswith(".csv") and f != default_file]
+    primer_labels = [
+        f"{parse_primer_filename(f)['set']} | {parse_primer_filename(f)['forward']} | {parse_primer_filename(f)['reverse']}"
+        for f in demo_files
+    ]
+    selected_label = st.selectbox("Choose a CSV file", primer_labels)
+    idx = primer_labels.index(selected_label)
+    return demo_files[idx], parse_primer_filename(demo_files[idx])
+
+def filter_ui(params):
+    rank_values = [params.get(col.lower(), "") for col in TAXONOMY_COLS]
+    global_q = params.get("global", "")
+    query = st.text_input("Global search (matches any taxonomy column)", value=global_q, key="global")
+    with st.expander("🔎 Filter by specific taxonomy", expanded=False):
+        st.write("Enter values for any ranks below to filter the table. Leave blank to ignore that rank.")
+        cols = st.columns(len(TAXONOMY_COLS))
+        filters = [
+            cols[i].text_input(TAXONOMY_COLS[i], value=rank_values[i], key=f"rank_{i}")
+            for i in range(len(TAXONOMY_COLS))
+        ]
+    return filters, query
+
+def results_table_ui(results, selected_rows):
+    selected_hashes = {row["row_id"] for row in selected_rows}
+    results_to_edit = results.copy()
+    results_to_edit["Select"] = results_to_edit["row_id"].isin(selected_hashes)
+    column_config = {
+        "Select": st.column_config.CheckboxColumn(
+            label="Select", help="Check to add this taxon to your selection."
+        ),
+        **{col: st.column_config.TextColumn(label=col, disabled=True) for col in TAXONOMY_COLS},
+        "Coverage": st.column_config.NumberColumn(
+            label="Coverage", width="small",
+            help="Fraction of target-group sequences amplified by this primer pair.",
+            disabled=True
+        ),
+        "Specificity": st.column_config.NumberColumn(
+            label="Specificity", width="small",
+            help="Fraction of amplified sequences that belong to the target group (i.e., not off-target).",
+            disabled=True
+        )
+    }
+    edited = st.data_editor(
+        results_to_edit[["Select"] + DISPLAY_COLS],
+        use_container_width=True,
+        hide_index=True,
+        column_config=column_config
+    )
+    return edited, results_to_edit
+
+def selected_table_ui(selected_rows):
+    if selected_rows:
+        selected_df = pd.DataFrame(selected_rows)
+        st.subheader("Selected taxa")
+        st.dataframe(selected_df[DISPLAY_COLS], use_container_width=True)
+        st.write("Bookmark or share this selection with the URL below.")
+
+# ---------- App Main Flow ----------
+
+DEFAULT_FILE = "primers/V3V4_CCTACGGGNGGCWGCAG_GACTACHVGGGTATCTAATCC.csv"
+df_or_path, primer_info = data_file_selector(DEFAULT_FILE)
+df = load_taxonomy_df(df_or_path)
+
+if primer_info:
+    st.markdown(
+        f"""**Primer set:** `{primer_info['set']}`  
+        **Forward:** `{primer_info['forward']}`  
+        **Reverse:** `{primer_info['reverse']}`"""
+    )
 
 params = st.query_params
-filters=[]
-with st.expander("🔎 Filter by taxonomic level", expanded=False):
-    for col in TAX_COLS:
-        v=params.get(col.lower(),[""])[0]
-        f=st.text_input(col, value=v, key="f_"+col.lower())
+filters = []
+with st.expander("🔎 Filter by specific taxonomy", expanded=False):
+    for col in TAXONOMY_COLS:
+        vals = st.query_params.get_all(col.lower())
+        v = vals[0] if vals else ""
+        f = st.text_input(col, value=v, key=f"rank_{col}")
         filters.append(f)
-global_q = st.text_input("Global search", value=params.get("global",[""])[0], key="global")
+global_vals = st.query_params.get_all("global")
+global_q = global_vals[0] if global_vals else ""
+global_q = st.text_input("Global search (matches any taxonomy column)", value=global_q, key="global")
 
-# Update all params at once
-np = {c.lower():filters[i] for i,c in enumerate(TAX_COLS)}
-np["global"]=global_q
-st.query_params = {**np, "selected_id": params.get_all("selected_id")}
+# Update params (keep all repeated selected_id values intact)
+updated = {col.lower(): filters[i] for i, col in enumerate(TAXONOMY_COLS)}
+updated["global"] = global_q
+updated["selected_id"] = params.get_all("selected_id")
+st.query_params.from_dict(updated)
 
 results = filter_df(df, filters, global_q)
 
-st.experimental_rerun() if not results.empty and False else None  # placeholder
+def suggest_and_info():
+    if results.empty and (global_q or any(filters)):
+        user_input = global_q or next((f for f in filters if f), "")
+        links = get_suggestions(user_input, df, filters)
+        if links:
+            st.info("Did you mean: " + " | ".join(links))
+        else:
+            st.info("No close matches found.")
+suggest_and_info()
 
 selected_ids = params.get_all("selected_id")
-if "selected_rows" not in st.session_state:
+if "selected_rows" not in st.session_state or st.session_state.selected_rows is None:
     st.session_state.selected_rows = []
-for rid in selected_ids:
-    if rid not in [r["row_id"] for r in st.session_state.selected_rows]:
-        m = df[df["row_id"] == rid]
-        if not m.empty:
-            st.session_state.selected_rows.append(m[DISPLAY_COLS+["row_id"]].iloc[0].to_dict())
+ids_in_state = {row["row_id"] for row in st.session_state.selected_rows}
+for row_id in selected_ids:
+    if row_id not in ids_in_state:
+        matches = df[df["row_id"] == row_id]
+        if not matches.empty:
+            st.session_state.selected_rows.append(
+                matches[DISPLAY_COLS + ["row_id"]].iloc[0].to_dict()
+            )
 
 if not results.empty:
-    rows = results.copy()
-    rows["Select"] = rows["row_id"].isin([r["row_id"] for r in st.session_state.selected_rows])
-    edited = st.data_editor(rows[["Select"]+DISPLAY_COLS], use_container_width=True, hide_index=True,
-        column_config={
-            "Select": st.column_config.CheckboxColumn(label="Select"), 
-            **{c: st.column_config.TextColumn(label=c, disabled=True) for c in TAX_COLS},
-            "Coverage": st.column_config.NumberColumn(width="small",disabled=True),
-            "Specificity": st.column_config.NumberColumn(width="small",disabled=True)
-        })
-    st.session_state.selected_rows = update_sel(edited, rows, st.session_state.selected_rows)
-    st.query_params = {**dict(st.query_params), "selected_id":[r["row_id"] for r in st.session_state.selected_rows]}
+    edited, results_to_edit = results_table_ui(results, st.session_state.selected_rows)
+    st.session_state.selected_rows = update_selected_rows(edited, results_to_edit, st.session_state.selected_rows)
+    # Store all selected ids as a repeated key list!
+    st.query_params["selected_id"] = [row["row_id"] for row in st.session_state.selected_rows]
 
-if st.session_state.selected_rows:
-    sel_df = pd.DataFrame(st.session_state.selected_rows)
-    st.subheader("Selected taxa")
-    st.dataframe(sel_df[DISPLAY_COLS], use_container_width=True)
-    ss=[r["row_id"] for r in st.session_state.selected_rows]
-    st.code("&".join(f"selected_id={q}" for q in ss))
+selected_table_ui(st.session_state.selected_rows)
