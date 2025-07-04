@@ -140,7 +140,7 @@ def selected_table_ui(selected_rows):
         selected_df = pd.DataFrame(selected_rows)
         st.subheader("Selected taxa")
         st.dataframe(selected_df[DISPLAY_COLS], use_container_width=True)
-        st.write("Bookmark or share this selection with the URL above.")
+        st.write("Bookmark or share this selection with the URL below.")
 
 # ---------- App Main Flow ----------
 
@@ -195,5 +195,10 @@ if not results.empty:
     edited, results_to_edit = results_table_ui(results, st.session_state.selected_rows)
     st.session_state.selected_rows = update_selected_rows(edited, results_to_edit, st.session_state.selected_rows)
     st.query_params["selected_id"] = [row["row_id"] for row in st.session_state.selected_rows]
+    # ---- Show a shareable URL manually ----
+    selected_ids = [row["row_id"] for row in st.session_state.selected_rows]
+    if selected_ids:
+        querystring = "&".join(f"selected_id={qid}" for qid in selected_ids)
+        st.code(f"?{querystring}")
 
 selected_table_ui(st.session_state.selected_rows)
