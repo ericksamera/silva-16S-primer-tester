@@ -100,8 +100,11 @@ def show_selected_table(selected_lists: List[List[str]], df: pd.DataFrame) -> No
         if pd.notnull(r['Amplifies']) and pd.notnull(r['Entries']) and r['Entries'] > 0 else "", axis=1
     )
     detailed["Differentiable (n %)"] = detailed.apply(
-        lambda r: f"{r['Differentiable']} ({r['Differentiable']/r['Entries']:.1%})"
-        if pd.notnull(r['Differentiable']) and pd.notnull(r['Entries']) and r['Entries'] > 0 else "", axis=1
+        lambda r: (
+            f"{r['Differentiable']} ({r['Differentiable']/r['Amplifies']:.1%})"
+            if pd.notnull(r['Differentiable']) and pd.notnull(r['Amplifies']) and r['Amplifies'] > 0
+            else ""
+        ), axis=1
     )
 
     show_cols = ["Taxonomy", "Amplifies (n %)", "Differentiable (n %)", "Rank Summary"]
