@@ -1,4 +1,4 @@
-# primer_tester/taxonomy.py
+# primer_tester_ui/taxonomy.py
 import pandas as pd
 import re
 from typing import List, Dict

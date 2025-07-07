@@ -1,7 +1,7 @@
-# primer_tester/utils.py
+# primer_tester_ui/utils.py
 import streamlit as st
 from typing import List
-from primer_tester.taxonomy import hash_taxonomy_list
+from primer_tester_ui.taxonomy import hash_taxonomy_list
 
 def update_query_params(selected_lists: List[List[str]], primer_basename: str) -> None:
     """

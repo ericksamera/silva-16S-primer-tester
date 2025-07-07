@@ -1,7 +1,7 @@
-# primer_tester/st_components.py
+# primer_tester_ui/st_components.py
 import streamlit as st
 from typing import List, Dict, Optional
-from primer_tester.utils import update_query_params
+from primer_tester_ui.utils import update_query_params
 import pandas as pd
 
 def primer_picker_dialog(

@@ -1,13 +1,13 @@
 # streamlit_app.py
 import streamlit as st
-from primer_tester.config import PRIMER_DIR
-from primer_tester.data_io import get_primer_files, load_data
-from primer_tester.taxonomy import (
+from primer_tester_ui.config import PRIMER_DIR
+from primer_tester_ui.data_io import get_primer_files, load_data
+from primer_tester_ui.taxonomy import (
     filter_taxonomy, add_taxonomy_list_column, get_hash_to_taxlist_map,
     load_selected_taxonomies_from_queryparams
 )
-from primer_tester.st_components import primer_picker_dialog, taxonomy_selector, show_selected_table
-from primer_tester.utils import update_query_params
+from primer_tester_ui.st_components import primer_picker_dialog, taxonomy_selector, show_selected_table
+from primer_tester_ui.utils import update_query_params
 
 def main():
     st.set_page_config(layout="wide")

@@ -1,4 +1,4 @@
-# primer_tester/data_io.py
+# primer_tester_ui/data_io.py
 import os
 import pandas as pd
 import ast
