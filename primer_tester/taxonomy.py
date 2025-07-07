@@ -2,6 +2,7 @@
 import pandas as pd
 import re
 from typing import List, Dict
+import streamlit as st
 
 def is_real_species(tax: str) -> bool:
     """
@@ -79,9 +80,7 @@ def load_selected_taxonomies_from_queryparams(hash_to_taxlist: Dict[str, List[st
     Returns:
         List of taxonomy lists selected via URL hash query params.
     """
-    import streamlit as st
     initial_hashes = st.query_params.get_all("selected")
     selected_lists = [hash_to_taxlist.get(h, None) for h in initial_hashes]
     return [x for x in selected_lists if x is not None]
-
 # ---

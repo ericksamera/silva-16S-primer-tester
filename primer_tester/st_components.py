@@ -45,16 +45,17 @@ def taxonomy_selector(
     primer_basename: str
 ) -> List[List[str]]:
     """
-    Displays a taxonomy selector table with checkboxes.
-    When new selections are made, updates session state and query params, then reruns app.
+    Displays a taxonomy selector table with checkboxes. Ensures 'Taxonomy List' column is present.
     Args:
-        filtered: DataFrame of currently available (not yet selected) taxonomy entries.
-        selected_lists: Current list of selected taxonomy lists.
-        primer_basename: Filename of the currently selected primer, for URL param persistence.
+        filtered: DataFrame of available taxonomy choices.
+        selected_lists: Current session's selected taxonomy lists.
+        primer_basename: Filename of the current primer file.
     Returns:
         Updated list of selected taxonomy lists.
     """
-    filtered = filtered.copy()
+    if "Taxonomy List" not in filtered.columns:
+        filtered = filtered.copy()
+        filtered["Taxonomy List"] = filtered["Taxonomy"].str.split(";")
     filtered["Select"] = False
     editor_cols = ["Select", "Taxonomy List"]
     edited = st.data_editor(
