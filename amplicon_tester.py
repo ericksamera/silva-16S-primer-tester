@@ -13,9 +13,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # --- Config ---
-VSEARCH_DB_PATH =    Path("db/SILVA.fna")
-TAXONOMY_FILE_PATH = Path("taxonomy.results.txt")
-IPCR_JSON =          Path("ipcr.results.json")
+VSEARCH_DB_PATH =    Path("/home/erick/Documents/unite-test/silva-16S-primer-tester/UNITE.fna")
+TAXONOMY_FILE_PATH = Path("/home/erick/Documents/unite-test/silva-16S-primer-tester/taxonomy.results.txt")
+IPCR_JSON =          Path("/home/erick/Documents/unite-test/silva-16S-primer-tester/results.json")
+
 FASTA_OUT =          "all_amplicons.fasta"
 VSEARCH_TSV_OUT =    "all_amplicons.vsearch.tsv"
 SUMMARY_JSONL =      "differentiation_summary.vsearch.jsonl"
