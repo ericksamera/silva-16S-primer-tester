@@ -56,7 +56,7 @@ def taxonomy_selector(
     if "Taxonomy List" not in filtered.columns:
         filtered = filtered.copy()
         filtered["Taxonomy List"] = filtered["Taxonomy"].str.split(";")
-    filtered["Select"] = False
+    filtered.loc[:, "Select"] = False
     editor_cols = ["Select", "Taxonomy List"]
     edited = st.data_editor(
         filtered[editor_cols],
