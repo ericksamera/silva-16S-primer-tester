@@ -46,16 +46,12 @@ def taxonomy_selector(
 ) -> List[List[str]]:
     """
     Displays a taxonomy selector table with checkboxes. Ensures 'Taxonomy List' column is present.
-    Args:
-        filtered: DataFrame of available taxonomy choices.
-        selected_lists: Current session's selected taxonomy lists.
-        primer_basename: Filename of the current primer file.
-    Returns:
-        Updated list of selected taxonomy lists.
     """
     if "Taxonomy List" not in filtered.columns:
         filtered = filtered.copy()
         filtered["Taxonomy List"] = filtered["Taxonomy"].str.split(";")
+    if filtered.empty:
+        return selected_lists
     filtered.loc[:, "Select"] = False
     editor_cols = ["Select", "Taxonomy List"]
     edited = st.data_editor(
@@ -79,35 +75,54 @@ def taxonomy_selector(
     return st.session_state["selected_taxonomy_lists"]
 
 def show_selected_table(selected_lists: List[List[str]], df: pd.DataFrame) -> None:
-    """
-    Displays a details table of all selected taxonomies, with amplifies and differentiable columns shown as
-    n (%) relative to entries.
-    Args:
-        selected_lists: List of selected taxonomy lists.
-        df: DataFrame containing the full taxonomy summary.
-    """
+    """Display details table with robust % calculations."""
     if not selected_lists:
         return
+
     st.markdown("### Selected Taxonomies (full details)")
+
+    # --- build the rows we need ------------------------------------------------
     sel_df = pd.DataFrame({"Taxonomy List": selected_lists})
     df = df.copy()
     df["Taxonomy Tuple"] = df["Taxonomy List"].apply(tuple)
     sel_df["Taxonomy Tuple"] = sel_df["Taxonomy List"].apply(tuple)
     detailed = sel_df.merge(df, on="Taxonomy Tuple", how="left")
 
-    detailed["Amplifies (n %)"] = detailed.apply(
-        lambda r: f"{r['Amplifies']} ({(r['Amplifies']/r['Entries']):.1%})"
-        if pd.notnull(r['Amplifies']) and pd.notnull(r['Entries']) and r['Entries'] > 0 else "", axis=1
-    )
-    detailed["Differentiable (n %)"] = detailed.apply(
+    # --- helper: extract the integer count from either int or "9 (81.8%)" -----
+    import re
+
+    def _to_int(val):
+        if pd.isna(val):
+            return 0
+        if isinstance(val, (int, float)):
+            return int(val)
+        m = re.match(r"\s*(\d+)", str(val))
+        return int(m.group(1)) if m else 0
+
+    detailed.loc[:, "Amplifies_cnt"]     = detailed["Amplifies"].apply(_to_int)
+    detailed.loc[:, "Differentiable_cnt"] = detailed["Differentiable"].apply(_to_int)
+    detailed.loc[:, "Entries_cnt"]        = detailed["Entries"].apply(_to_int)
+
+    # --- formatted columns -----------------------------------------------------
+    detailed.loc[:, "Amplifies (n %)"] = detailed.apply(
         lambda r: (
-            f"{r['Differentiable']} ({(r['Differentiable']/r['Amplifies']):.1%})"
-            if pd.notnull(r['Differentiable']) and pd.notnull(r['Amplifies']) and r['Amplifies'] > 0
-            else ""
-        ), axis=1
+            f"{r.Amplifies_cnt} ({r.Amplifies_cnt / r.Entries_cnt:.1%})"
+            if r.Entries_cnt > 0 else ""
+        ),
+        axis=1,
+    )
+    detailed.loc[:, "Differentiable (n %)"] = detailed.apply(
+        lambda r: (
+            f"{r.Differentiable_cnt} ({r.Differentiable_cnt / r.Amplifies_cnt:.1%})"
+            if r.Amplifies_cnt > 0 else ""
+        ),
+        axis=1,
     )
 
+    st.dataframe(
+        detailed[["Taxonomy", "Amplifies (n %)", "Differentiable (n %)", "Rank Summary"]],
+        use_container_width=True,
+        hide_index=True,
+    )
 
-    show_cols = ["Taxonomy", "Amplifies (n %)", "Differentiable (n %)", "Rank Summary"]
-    st.dataframe(detailed[show_cols], use_container_width=True, hide_index=True)
 # ---
